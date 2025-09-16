@@ -19,14 +19,10 @@ Retorno:
 
 🛠️ Tecnologias
 
-Flask + Flask-CORS
+- Flask + Flask-CORS
 
-Hugging Face Inference API (zero-shot + geração de texto)
+- Hugging Face Inference API (zero-shot + geração de texto)
 
-Deploy no Render (Free Tier)
+- Deploy no Render (Free Tier)
 
-⚠️ Observação
 
-O serviço hiberna após inatividade no plano gratuito.
-
-A primeira chamada pode levar alguns segundos (cold start).
