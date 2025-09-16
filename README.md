@@ -2,6 +2,15 @@
 
 API Flask que processa e-mails, faz pré-processamento de texto, classifica com **Hugging Face Inference API** e gera uma resposta automática.
 
+## 🛠️ Tecnologias
+
+- Flask + Flask-CORS
+
+- Hugging Face Inference API (zero-shot + geração de texto)
+
+- Deploy no Render (Free Tier)
+
+
 ## 🚀 Endpoints
 - `GET /health` → checar status da API  
 - `POST /classify`  
@@ -16,14 +25,6 @@ Retorno:
   "suggested_reply": "Resposta automática sugerida..."
 }
 
-
-🛠️ Tecnologias
-
-- Flask + Flask-CORS
-
-- Hugging Face Inference API (zero-shot + geração de texto)
-
-- Deploy no Render (Free Tier)
 
 
 
