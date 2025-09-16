@@ -10,7 +10,7 @@ API Flask que processa e-mails, faz pré-processamento de texto, classifica com 
   { "text": "Olá, preciso do status do ticket #123." }
 
 Retorno:
-{
+```json{
   "category": "Produtivo",
   "confidence": 0.87,
   "suggested_reply": "Resposta automática sugerida..."
@@ -24,5 +24,6 @@ Retorno:
 - Hugging Face Inference API (zero-shot + geração de texto)
 
 - Deploy no Render (Free Tier)
+
 
 
