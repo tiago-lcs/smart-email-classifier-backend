@@ -2,13 +2,12 @@ import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from ai_client import zero_shot_classify, generate_reply
+from ai_client import zero_shot_classify, generate_reply, HFError
 from nlp import preprocess
 
 app = Flask(__name__)
-CORS(app)  # permite chamadas do Netlify (origem diferente)
+CORS(app)
 
-# Prompt base para geração da resposta
 REPLY_SYSTEM = """
 Você é um assistente de atendimento por e-mail de uma empresa do setor financeiro.
 Responda de modo educado, objetivo e profissional em português do Brasil.
@@ -17,59 +16,80 @@ Se for produtivo, peça as informações mínimas ou confirme o próximo passo, 
 Assine como Equipe de Suporte.
 """
 
-def make_generation_prompt(category: str, original_text: str) -> str:
-    if category.lower().startswith("produt"):
-        instr = "Classifiquei o e-mail como PRODUTIVO. Escreva uma resposta curta, pedindo o que falta ou indicando o próximo passo."
-    else:
-        instr = "Classifiquei o e-mail como IMPRODUTIVO. Escreva um agradecimento curto e cordial, sem abrir ticket."
-    prompt = (
-        f"{REPLY_SYSTEM}\n\n"
-        f"Instrução: {instr}\n\n"
-        f"E-mail do cliente:\n\"\"\"\n{original_text}\n\"\"\"\n\n"
-        f"Resposta proposta:"
-    )
-    return prompt
-
 @app.route("/", methods=["GET"])
 def root():
-    return """
-    <h2>Smart Email Classifier – Backend</h2>
-    <p>API online 🚀</p>
-    <p>Use <code>/health</code> para health check e <code>/classify</code> (POST) para classificar e-mails.</p>
-    """, 200
+    return (
+        "<h1>Smart Email Classifier - Backend</h1>"
+        "<p>API online 🚀</p>"
+        "<p>Use <code>/health</code> e <code>POST /classify</code>.</p>"
+    ), 200
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/classify", methods=["GET"])
+def classify_info():
+    return jsonify({"message": "Use POST /classify com JSON: {\"text\": \"...\"}"}), 200
+
+def _fallback_rule_based(original_text: str):
+    """
+    Regrinhas simples para nunca quebrar o MVP quando a HF falhar.
+    """
+    t = original_text.lower()
+    palavras_prod = ["status", "chamado", "ticket", "protocolo", "anexo", "fatura", "boleto",
+                     "reembolso", "erro", "suporte", "prazo", "previsão", "documento", "acesso"]
+    produtivo = any(p in t for p in palavras_prod)
+    categoria = "Produtivo" if produtivo else "Improdutivo"
+    if produtivo:
+        reply = ("Olá! Para agilizar, poderia confirmar o número do chamado/protocolo "
+                 "e, se houver, anexar os documentos pendentes? Assim seguimos com o próximo passo.\n\n"
+                 "Atenciosamente,\nEquipe de Suporte")
+    else:
+        reply = ("Olá! Obrigado pela mensagem. Ficamos à disposição.\n\n"
+                 "Atenciosamente,\nEquipe de Suporte")
+    return {"category": categoria, "confidence": 0.51 if produtivo else 0.51, "suggested_reply": reply}
+
+def make_generation_prompt(category: str, original_text: str) -> str:
+    if category.lower().startswith("produt"):
+        instr = "Classifiquei o e-mail como PRODUTIVO. Escreva uma resposta curta, pedindo o que falta ou indicando o próximo passo."
+    else:
+        instr = "Classifiquei o e-mail como IMPRODUTIVO. Escreva um agradecimento curto e cordial, sem abrir ticket."
+    return (
+        f"{REPLY_SYSTEM}\n\nInstrução: {instr}\n\n"
+        f"E-mail do cliente:\n\"\"\"\n{original_text}\n\"\"\"\n\nResposta proposta:"
+    )
+
 @app.route("/classify", methods=["POST"])
 def classify():
-    data = request.get_json(silent=True) or {}
-    text = (data.get("text") or "").strip()
-    if not text:
-        return jsonify({"error": "Texto vazio."}), 400
+    try:
+        data = request.get_json(silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "Texto vazio."}), 400
 
-    # 1) pré-processa (leve)
-    cleaned = preprocess(text)
+        cleaned = preprocess(text)
 
-    # 2) classifica (Zero-Shot na HF API)
-    z = zero_shot_classify(
-        cleaned,
-        candidate_labels=["Produtivo", "Improdutivo"],
-        multi_label=False
-    )
-    category = z["label"]
-    score = z["score"]
+        try:
+            z = zero_shot_classify(cleaned, ["Produtivo", "Improdutivo"], multi_label=False)
+            category = z["label"]
+            score = float(z["score"])
+            gen_prompt = make_generation_prompt(category, text)
+            reply = generate_reply(gen_prompt, max_new_tokens=80, temperature=0.3)
+            return jsonify({
+                "category": category,
+                "confidence": round(score, 4),
+                "suggested_reply": reply
+            })
+        except HFError as e:
+            # Fallback para garantir resposta mesmo sem HF
+            fb = _fallback_rule_based(text)
+            fb["note"] = f"fallback:true; reason:{str(e)}"
+            return jsonify(fb), 200
 
-    # 3) gera resposta (FLAN-T5 small via HF API)
-    gen_prompt = make_generation_prompt(category, text)
-    reply = generate_reply(gen_prompt, max_new_tokens=80, temperature=0.3)
-
-    return jsonify({
-        "category": category,
-        "confidence": round(score, 4),
-        "suggested_reply": reply
-    })
+    except Exception as e:
+        # Última linha de defesa: nunca 500 opaco
+        return jsonify({"error": "Falha inesperada no servidor.", "detail": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
