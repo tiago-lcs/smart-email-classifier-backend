@@ -30,6 +30,14 @@ def make_generation_prompt(category: str, original_text: str) -> str:
     )
     return prompt
 
+@app.route("/", methods=["GET"])
+def root():
+    return """
+    <h2>Smart Email Classifier – Backend</h2>
+    <p>API online 🚀</p>
+    <p>Use <code>/health</code> para health check e <code>/classify</code> (POST) para classificar e-mails.</p>
+    """, 200
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
